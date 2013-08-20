@@ -20,7 +20,12 @@ Run `./configure` in the `src/` directory with the flags you want (call
                   --enable-rubyinterp \
                   --enable-pythoninterp \
                   --enable-perlinterp \
+                  --with-lua-prefix=/usr/local/Cellar/lua/5.1.5 \
+                  --with-luajit \
+                  --enable-luainterp \
                   --enable-cscope
+
+Note that the lua prefix is funky due to brew
 
 Now build the project using `make`:
 
