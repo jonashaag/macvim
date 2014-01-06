@@ -11120,6 +11120,8 @@ get_buffer_lines(buf, start, end, retlist, rettv)
 {
     char_u	*p;
 
+    rettv->v_type = VAR_STRING;
+    rettv->vval.v_string = NULL;
     if (retlist && rettv_list_alloc(rettv) == FAIL)
 	return;
 
@@ -11132,8 +11134,6 @@ get_buffer_lines(buf, start, end, retlist, rettv)
 	    p = ml_get_buf(buf, start, FALSE);
 	else
 	    p = (char_u *)"";
-
-	rettv->v_type = VAR_STRING;
 	rettv->vval.v_string = vim_strsave(p);
     }
     else
