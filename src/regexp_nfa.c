@@ -3945,6 +3945,7 @@ copy_ze_off(to, from)
 
 /*
  * Return TRUE if "sub1" and "sub2" have the same start positions.
+ * When using back-references also check the end position.
  */
     static int
 sub_equal(sub1, sub2)
@@ -3976,6 +3977,23 @@ sub_equal(sub1, sub2)
 	    if (s1 != -1 && sub1->list.multi[i].start.col
 					     != sub2->list.multi[i].start.col)
 		return FALSE;
+
+	    if (nfa_has_backref)
+	    {
+		if (i < sub1->in_use)
+		    s1 = sub1->list.multi[i].end.lnum;
+		else
+		    s1 = -1;
+		if (i < sub2->in_use)
+		    s2 = sub2->list.multi[i].end.lnum;
+		else
+		    s2 = -1;
+		if (s1 != s2)
+		    return FALSE;
+		if (s1 != -1 && sub1->list.multi[i].end.col
+					       != sub2->list.multi[i].end.col)
+		return FALSE;
+	    }
 	}
     }
     else
@@ -3992,6 +4010,19 @@ sub_equal(sub1, sub2)
 		sp2 = NULL;
 	    if (sp1 != sp2)
 		return FALSE;
+	    if (nfa_has_backref)
+	    {
+		if (i < sub1->in_use)
+		    sp1 = sub1->list.line[i].end;
+		else
+		    sp1 = NULL;
+		if (i < sub2->in_use)
+		    sp2 = sub2->list.line[i].end;
+		else
+		    sp2 = NULL;
+		if (sp1 != sp2)
+		    return FALSE;
+	    }
 	}
     }
 
@@ -4293,8 +4324,10 @@ addstate(l, state, subs_arg, pim, off)
 	    {
 		/* This state is already in the list, don't add it again,
 		 * unless it is an MOPEN that is used for a backreference or
-		 * when there is a PIM. */
-		if (!nfa_has_backref && pim == NULL && !l->has_pim)
+		 * when there is a PIM. For NFA_MATCH check the position,
+		 * lower position is preferred. */
+		if (!nfa_has_backref && pim == NULL && !l->has_pim
+						     && state->c != NFA_MATCH)
 		{
 skip_add:
 #ifdef ENABLE_LOG
