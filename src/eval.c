@@ -463,6 +463,7 @@ static void f_and __ARGS((typval_T *argvars, typval_T *rettv));
 static void f_append __ARGS((typval_T *argvars, typval_T *rettv));
 static void f_argc __ARGS((typval_T *argvars, typval_T *rettv));
 static void f_argidx __ARGS((typval_T *argvars, typval_T *rettv));
+static void f_arglistid __ARGS((typval_T *argvars, typval_T *rettv));
 static void f_argv __ARGS((typval_T *argvars, typval_T *rettv));
 #ifdef FEAT_FLOAT
 static void f_asin __ARGS((typval_T *argvars, typval_T *rettv));
@@ -559,6 +560,7 @@ static void f_getftype __ARGS((typval_T *argvars, typval_T *rettv));
 static void f_getline __ARGS((typval_T *argvars, typval_T *rettv));
 static void f_getmatches __ARGS((typval_T *argvars, typval_T *rettv));
 static void f_getpid __ARGS((typval_T *argvars, typval_T *rettv));
+static void f_getcurpos __ARGS((typval_T *argvars, typval_T *rettv));
 static void f_getpos __ARGS((typval_T *argvars, typval_T *rettv));
 static void f_getqflist __ARGS((typval_T *argvars, typval_T *rettv));
 static void f_getreg __ARGS((typval_T *argvars, typval_T *rettv));
@@ -764,7 +766,7 @@ static void f_winwidth __ARGS((typval_T *argvars, typval_T *rettv));
 static void f_writefile __ARGS((typval_T *argvars, typval_T *rettv));
 static void f_xor __ARGS((typval_T *argvars, typval_T *rettv));
 
-static int list2fpos __ARGS((typval_T *arg, pos_T *posp, int *fnump));
+static int list2fpos __ARGS((typval_T *arg, pos_T *posp, int *fnump, colnr_T *curswantp));
 static pos_T *var2fpos __ARGS((typval_T *varp, int dollar_lnum, int *fnum));
 static int get_env_len __ARGS((char_u **arg));
 static int get_id_len __ARGS((char_u **arg));
@@ -7876,6 +7878,7 @@ static struct fst
     {"append",		2, 2, f_append},
     {"argc",		0, 0, f_argc},
     {"argidx",		0, 0, f_argidx},
+    {"arglistid",	0, 2, f_arglistid},
     {"argv",		0, 1, f_argv},
 #ifdef FEAT_FLOAT
     {"asin",		1, 1, f_asin},	/* WJMc */
@@ -7966,6 +7969,7 @@ static struct fst
     {"getcmdline",	0, 0, f_getcmdline},
     {"getcmdpos",	0, 0, f_getcmdpos},
     {"getcmdtype",	0, 0, f_getcmdtype},
+    {"getcurpos",	0, 0, f_getcurpos},
     {"getcwd",		0, 0, f_getcwd},
     {"getfontname",	0, 1, f_getfontname},
     {"getfperm",	1, 1, f_getfperm},
@@ -8857,6 +8861,41 @@ f_argidx(argvars, rettv)
     typval_T	*rettv;
 {
     rettv->vval.v_number = curwin->w_arg_idx;
+}
+
+/*
+ * "arglistid()" function
+ */
+    static void
+f_arglistid(argvars, rettv)
+    typval_T	*argvars UNUSED;
+    typval_T	*rettv;
+{
+    win_T	*wp;
+    tabpage_T	*tp = NULL;
+    long	n;
+
+    rettv->vval.v_number = -1;
+    if (argvars[0].v_type != VAR_UNKNOWN)
+    {
+	if (argvars[1].v_type != VAR_UNKNOWN)
+	{
+	    n = get_tv_number(&argvars[1]);
+	    if (n >= 0)
+		tp = find_tabpage(n);
+	}
+	else
+	    tp = curtab;
+
+	if (tp != NULL)
+	{
+	    wp = find_win_by_nr(&argvars[0], tp);
+	    if (wp != NULL)
+		rettv->vval.v_number = wp->w_alist->id;
+	}
+    }
+    else
+	rettv->vval.v_number = curwin->w_alist->id;
 }
 
 /*
@@ -9800,14 +9839,17 @@ f_cursor(argvars, rettv)
     if (argvars[1].v_type == VAR_UNKNOWN)
     {
 	pos_T	    pos;
+	colnr_T	    curswant = -1;
 
-	if (list2fpos(argvars, &pos, NULL) == FAIL)
+	if (list2fpos(argvars, &pos, NULL, &curswant) == FAIL)
 	    return;
 	line = pos.lnum;
 	col = pos.col;
 #ifdef FEAT_VIRTUALEDIT
 	coladd = pos.coladd;
 #endif
+	if (curswant >= 0)
+	    curwin->w_curswant = curswant - 1;
     }
     else
     {
@@ -11748,6 +11790,19 @@ f_getpid(argvars, rettv)
     rettv->vval.v_number = mch_get_pid();
 }
 
+static void getpos_both __ARGS((typval_T *argvars, typval_T *rettv, int getcurpos));
+
+/*
+ * "getcurpos()" function
+ */
+    static void
+f_getcurpos(argvars, rettv)
+    typval_T	*argvars;
+    typval_T	*rettv;
+{
+    getpos_both(argvars, rettv, TRUE);
+}
+
 /*
  * "getpos(string)" function
  */
@@ -11756,6 +11811,15 @@ f_getpos(argvars, rettv)
     typval_T	*argvars;
     typval_T	*rettv;
 {
+    getpos_both(argvars, rettv, FALSE);
+}
+
+    static void
+getpos_both(argvars, rettv, getcurpos)
+    typval_T	*argvars;
+    typval_T	*rettv;
+    int		getcurpos;
+{
     pos_T	*fp;
     list_T	*l;
     int		fnum = -1;
@@ -11763,7 +11827,10 @@ f_getpos(argvars, rettv)
     if (rettv_list_alloc(rettv) == OK)
     {
 	l = rettv->vval.v_list;
-	fp = var2fpos(&argvars[0], TRUE, &fnum);
+	if (getcurpos)
+	    fp = &curwin->w_cursor;
+	else
+	    fp = var2fpos(&argvars[0], TRUE, &fnum);
 	if (fnum != -1)
 	    list_append_number(l, (varnumber_T)fnum);
 	else
@@ -11778,6 +11845,8 @@ f_getpos(argvars, rettv)
 				(fp != NULL) ? (varnumber_T)fp->coladd :
 #endif
 							      (varnumber_T)0);
+	if (getcurpos)
+	    list_append_number(l, (varnumber_T)curwin->w_curswant + 1);
     }
     else
 	rettv->vval.v_number = FALSE;
@@ -16779,12 +16848,13 @@ f_setpos(argvars, rettv)
     pos_T	pos;
     int		fnum;
     char_u	*name;
+    colnr_T	curswant = -1;
 
     rettv->vval.v_number = -1;
     name = get_tv_string_chk(argvars);
     if (name != NULL)
     {
-	if (list2fpos(&argvars[1], &pos, &fnum) == OK)
+	if (list2fpos(&argvars[1], &pos, &fnum, &curswant) == OK)
 	{
 	    if (--pos.col < 0)
 		pos.col = 0;
@@ -16794,6 +16864,8 @@ f_setpos(argvars, rettv)
 		if (fnum == curbuf->b_fnum)
 		{
 		    curwin->w_cursor = pos;
+		    if (curswant >= 0)
+			curwin->w_curswant = curswant - 1;
 		    check_cursor();
 		    rettv->vval.v_number = 0;
 		}
@@ -19251,20 +19323,30 @@ f_winrestview(argvars, rettv)
 	EMSG(_(e_invarg));
     else
     {
-	curwin->w_cursor.lnum = get_dict_number(dict, (char_u *)"lnum");
-	curwin->w_cursor.col = get_dict_number(dict, (char_u *)"col");
+	if (dict_find(dict, (char_u *)"lnum", -1) != NULL)
+	    curwin->w_cursor.lnum = get_dict_number(dict, (char_u *)"lnum");
+	if (dict_find(dict, (char_u *)"col", -1) != NULL)
+	    curwin->w_cursor.col = get_dict_number(dict, (char_u *)"col");
 #ifdef FEAT_VIRTUALEDIT
-	curwin->w_cursor.coladd = get_dict_number(dict, (char_u *)"coladd");
+	if (dict_find(dict, (char_u *)"coladd", -1) != NULL)
+	    curwin->w_cursor.coladd = get_dict_number(dict, (char_u *)"coladd");
 #endif
-	curwin->w_curswant = get_dict_number(dict, (char_u *)"curswant");
-	curwin->w_set_curswant = FALSE;
+	if (dict_find(dict, (char_u *)"curswant", -1) != NULL)
+	{
+	    curwin->w_curswant = get_dict_number(dict, (char_u *)"curswant");
+	    curwin->w_set_curswant = FALSE;
+	}
 
-	set_topline(curwin, get_dict_number(dict, (char_u *)"topline"));
+	if (dict_find(dict, (char_u *)"topline", -1) != NULL)
+	    set_topline(curwin, get_dict_number(dict, (char_u *)"topline"));
 #ifdef FEAT_DIFF
-	curwin->w_topfill = get_dict_number(dict, (char_u *)"topfill");
+	if (dict_find(dict, (char_u *)"topfill", -1) != NULL)
+	    curwin->w_topfill = get_dict_number(dict, (char_u *)"topfill");
 #endif
-	curwin->w_leftcol = get_dict_number(dict, (char_u *)"leftcol");
-	curwin->w_skipcol = get_dict_number(dict, (char_u *)"skipcol");
+	if (dict_find(dict, (char_u *)"leftcol", -1) != NULL)
+	    curwin->w_leftcol = get_dict_number(dict, (char_u *)"leftcol");
+	if (dict_find(dict, (char_u *)"skipcol", -1) != NULL)
+	    curwin->w_skipcol = get_dict_number(dict, (char_u *)"skipcol");
 
 	check_cursor();
 	win_new_height(curwin, curwin->w_height);
@@ -19560,21 +19642,22 @@ var2fpos(varp, dollar_lnum, fnum)
  * validity.
  */
     static int
-list2fpos(arg, posp, fnump)
+list2fpos(arg, posp, fnump, curswantp)
     typval_T	*arg;
     pos_T	*posp;
     int		*fnump;
+    colnr_T	*curswantp;
 {
     list_T	*l = arg->vval.v_list;
     long	i = 0;
     long	n;
 
-    /* List must be: [fnum, lnum, col, coladd], where "fnum" is only there
-     * when "fnump" isn't NULL and "coladd" is optional. */
+    /* List must be: [fnum, lnum, col, coladd, curswant], where "fnum" is only
+     * there when "fnump" isn't NULL; "coladd" and "curswant" are optional. */
     if (arg->v_type != VAR_LIST
 	    || l == NULL
 	    || l->lv_len < (fnump == NULL ? 2 : 3)
-	    || l->lv_len > (fnump == NULL ? 3 : 4))
+	    || l->lv_len > (fnump == NULL ? 4 : 5))
 	return FAIL;
 
     if (fnump != NULL)
@@ -19598,12 +19681,15 @@ list2fpos(arg, posp, fnump)
     posp->col = n;
 
 #ifdef FEAT_VIRTUALEDIT
-    n = list_find_nr(l, i, NULL);
+    n = list_find_nr(l, i, NULL);	/* off */
     if (n < 0)
 	posp->coladd = 0;
     else
 	posp->coladd = n;
 #endif
+
+    if (curswantp != NULL)
+	*curswantp = list_find_nr(l, i + 1, NULL);  /* curswant */
 
     return OK;
 }

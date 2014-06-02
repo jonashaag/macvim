@@ -1716,6 +1716,8 @@ append( {lnum}, {string})	Number	append {string} below line {lnum}
 append( {lnum}, {list})		Number	append lines {list} below line {lnum}
 argc()				Number	number of files in the argument list
 argidx()			Number	current index in the argument list
+arglistid( [{winnr}, [ {tabnr}]])
+				Number	argument list id
 argv( {nr})			String	{nr} entry of the argument list
 argv( )				List	the argument list
 asin( {expr})			Float	arc sine of {expr}
@@ -1806,10 +1808,11 @@ getcharmod( )			Number	modifiers for the last typed character
 getcmdline()			String	return the current command-line
 getcmdpos()			Number	return cursor position in command-line
 getcmdtype()			String	return the current command-line type
+getcurpos()			List	position of the cursor
 getcwd()			String	the current working directory
+getfontname( [{name}])		String	name of font being used
 getfperm( {fname})		String	file permissions of file {fname}
 getfsize( {fname})		Number	size in bytes of file {fname}
-getfontname( [{name}])		String	name of font being used
 getftime( {fname})		Number	last modification time of file
 getftype( {fname})		String	description of type of file {fname}
 getline( {lnum})		String	line {lnum} of current buffer
@@ -2102,6 +2105,18 @@ argc()		The result is the number of files in the argument list of the
 							*argidx()*
 argidx()	The result is the current index in the argument list.  0 is
 		the first file.  argc() - 1 is the last one.  See |arglist|.
+
+							*arglistid()*
+arglistid([{winnr}, [ {tabnr} ]])
+		Return the argument list ID.  This is a number which
+		identifies the argument list being used.  Zero is used for the
+		global argument list.
+		Return zero if the arguments are invalid.
+
+		Without arguments use the current window.
+		With {winnr} only use this window in the current tab page.
+		With {winnr} and {tabnr} use the window in the specified tab
+		page.
 
 							*argv()*
 argv([{nr}])	The result is the {nr}th file in the argument list of the
@@ -2587,9 +2602,14 @@ cursor({lnum}, {col} [, {off}])				*cursor()*
 cursor({list})
 		Positions the cursor at the column (byte count) {col} in the
 		line {lnum}.  The first column is one.
+
 		When there is one argument {list} this is used as a |List|
-		with two or three items {lnum}, {col} and {off}.  This is like
-		the return value of |getpos()|, but without the first item.
+		with two, three or four item:
+			[{lnum}, {col}, {off}]
+			[{lnum}, {col}, {off}, {curswant}]
+		This is like the return value of |getpos()| or |getcurpos|,
+		but without the first item.
+
 		Does not change the jumplist.
 		If {lnum} is greater than the number of lines in the buffer,
 		the cursor will be positioned at the last line in the buffer.
@@ -2598,6 +2618,8 @@ cursor({list})
 		the cursor will be positioned at the last character in the
 		line.
 		If {col} is zero, the cursor will stay in the current column.
+		If {curswant} is given it is used to set the preferred column
+		for vertical movment.  Otherwise {col} is used.
 		When 'virtualedit' is used {off} specifies the offset in
 		screen columns from the start of the character.  E.g., a
 		position within a <Tab> or after the last character.
@@ -3320,6 +3342,17 @@ getcmdtype()						*getcmdtype()*
 		|c_CTRL-\_e| or |c_CTRL-R_=| or an expression mapping.
 		Returns an empty string otherwise.
 		Also see |getcmdpos()|, |setcmdpos()| and |getcmdline()|.
+
+							*getcurpos()*
+getcurpos()	Get the position of the cursor.  This is like getpos('.'), but
+		includes an extra item in the list:
+		    [bufnum, lnum, col, off, curswant]
+		The "curswant" number is the preferred column when moving the
+		cursor vertically.
+		This can be used to save and restore the cursor position: >
+			let save_cursor = getcurpos()
+			MoveTheCursorAround
+			call setpos('.', save_cursor)
 
 							*getcwd()*
 getcwd()	The result is a String, which is the name of the current
@@ -4480,7 +4513,8 @@ getpid()	Return a Number which is the process ID of the Vim process.
 
 							*getpos()*
 getpos({expr})	Get the position for {expr}.  For possible values of {expr}
-		see |line()|.
+		see |line()|.  For getting the cursor position see
+		|getcurpos()|.
 		The result is a |List| with four numbers:
 		    [bufnum, lnum, col, off]
 		"bufnum" is zero, unless a mark like '0 or 'A is used, then it
@@ -4494,11 +4528,11 @@ getpos({expr})	Get the position for {expr}.  For possible values of {expr}
 		Note that for '< and '> Visual mode matters: when it is "V"
 		(visual line mode) the column of '< is zero and the column of
 		'> is a large number.
-		This can be used to save and restore the cursor position: >
-			let save_cursor = getpos(".")
-			MoveTheCursorAround
-			call setpos('.', save_cursor)
-<		Also see |setpos()|.
+		This can be used to save and restore the position of a mark: >
+			let save_a_mark = getpos("'a")
+			...
+			call setpos(''a', save_a_mark
+<		Also see |getcurpos()| and |setpos()|.
 
 or({expr}, {expr})					*or()*
 		Bitwise OR on the two arguments.  The arguments are converted
@@ -5298,8 +5332,9 @@ setpos({expr}, {list})
 			.	the cursor
 			'x	mark x
 
-		{list} must be a |List| with four numbers:
+		{list} must be a |List| with four or five numbers:
 		    [bufnum, lnum, col, off]
+		    [bufnum, lnum, col, off, curswant]
 
 		"bufnum" is the buffer number.	Zero can be used for the
 		current buffer.  Setting the cursor is only possible for
@@ -5317,6 +5352,12 @@ setpos({expr}, {list})
 		character.  E.g., a position within a <Tab> or after the last
 		character.
 
+		The "curswant" number is only used when setting the cursor
+		position.  It sets the preferred column for when moving the
+		cursor vertically.  When the "curswant" number is missing the
+		preferred column is not set.  When it is present and setting a
+		mark position it is not used.
+
 		Note that for '< and '> changing the line number may result in
 		the marks to be effectively be swapped, so that '< is always
 		before '>.
@@ -5324,10 +5365,13 @@ setpos({expr}, {list})
 		Returns 0 when the position could be set, -1 otherwise.
 		An error message is given if {expr} is invalid.
 
-		Also see |getpos()|
+		Also see |getpos()| and |getcurpos()|.
 
 		This does not restore the preferred column for moving
-		vertically.  See |winrestview()| for that.
+		vertically; if you set the cursor position with this, |j| and
+		|k| motions will jump to previous columns!  Use |cursor()| to
+		also set the preferred column.  Also see the "curswant" key in
+		|winrestview()|.
 
 
 setqflist({list} [, {action}])				*setqflist()*
@@ -6392,6 +6436,16 @@ winrestcmd()	Returns a sequence of |:resize| commands that should restore
 winrestview({dict})
 		Uses the |Dictionary| returned by |winsaveview()| to restore
 		the view of the current window.
+		Note: The {dict} does not have to contain all values, that are
+		returned by |winsaveview()|. If values are missing, those
+		settings won't be restored. So you can use: >
+		    :call winrestview({'curswant': 4})
+<
+		This will only set the curswant value (the column the cursor
+		wants to move on vertical movements) of the cursor to column 5
+		(yes, that is 5), while all other settings will remain the
+		same. This is useful, if you set the cursor position manually.
+
 		If you have changed the values the result is unpredictable.
 		If the window size changed the result won't be the same.
 
@@ -6406,7 +6460,9 @@ winsaveview()	Returns a |Dictionary| that contains information to restore
 		not opened when moving around.
 		The return value includes:
 			lnum		cursor line number
-			col		cursor column
+			col		cursor column (Note: the first column
+					zero, as opposed to what getpos()
+					returns)
 			coladd		cursor column offset for 'virtualedit'
 			curswant	column for vertical movement
 			topline		first line in the window
