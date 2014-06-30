@@ -191,6 +191,10 @@
 #ifdef FEAT_ARABIC
 # define PV_ARAB	OPT_WIN(WV_ARAB)
 #endif
+#ifdef FEAT_LINEBREAK
+# define PV_BRI		OPT_WIN(WV_BRI)
+# define PV_BRIOPT	OPT_WIN(WV_BRIOPT)
+#endif
 #ifdef FEAT_DIFF
 # define PV_DIFF	OPT_WIN(WV_DIFF)
 #endif
@@ -655,6 +659,24 @@ static struct vimoption
 #else
 			    (char_u *)NULL, PV_NONE,
 			    {(char_u *)0L, (char_u *)0L}
+#endif
+			    SCRIPTID_INIT},
+    {"breakindent",   "bri",  P_BOOL|P_VI_DEF|P_VIM|P_RWIN,
+#ifdef FEAT_LINEBREAK
+			    (char_u *)VAR_WIN, PV_BRI,
+			    {(char_u *)FALSE, (char_u *)0L}
+#else
+			    (char_u *)NULL, PV_NONE,
+			    {(char_u *)0L, (char_u *)0L}
+#endif
+			    SCRIPTID_INIT},
+    {"breakindentopt", "briopt", P_STRING|P_ALLOCED|P_VI_DEF|P_RBUF|P_COMMA|P_NODUP,
+#ifdef FEAT_LINEBREAK
+			    (char_u *)VAR_WIN, PV_BRIOPT,
+			    {(char_u *)"", (char_u *)NULL}
+#else
+			    (char_u *)NULL, PV_NONE,
+			    {(char_u *)"", (char_u *)NULL}
 #endif
 			    SCRIPTID_INIT},
     {"browsedir",   "bsdir",P_STRING|P_VI_DEF,
@@ -1425,7 +1447,7 @@ static struct vimoption
 			    SCRIPTID_INIT},
     {"history",	    "hi",   P_NUM|P_VIM,
 			    (char_u *)&p_hi, PV_NONE,
-			    {(char_u *)0L, (char_u *)20L} SCRIPTID_INIT},
+			    {(char_u *)0L, (char_u *)50L} SCRIPTID_INIT},
     {"hkmap",	    "hk",   P_BOOL|P_VI_DEF|P_VIM,
 #ifdef FEAT_RIGHTLEFT
 			    (char_u *)&p_hkmap, PV_NONE,
@@ -3099,6 +3121,7 @@ static int  istermoption __ARGS((struct vimoption *));
 static char_u *get_varp_scope __ARGS((struct vimoption *p, int opt_flags));
 static char_u *get_varp __ARGS((struct vimoption *));
 static void option_value2string __ARGS((struct vimoption *, int opt_flags));
+static void check_winopt __ARGS((winopt_T *wop));
 static int wc_use_keyname __ARGS((char_u *varp, long *wcp));
 #ifdef FEAT_LANGMAP
 static void langmap_init __ARGS((void));
@@ -5303,7 +5326,7 @@ didset_options()
     (void)opt_strings_flags(p_fdo, p_fdo_values, &fdo_flags, TRUE);
 #endif
 #ifdef FEAT_FULLSCREEN
-    (void)check_fuoptions(p_fuoptions, &fuoptions_flags, 
+    (void)check_fuoptions(p_fuoptions, &fuoptions_flags,
             &fuoptions_bgcolor);
 #endif
     (void)opt_strings_flags(p_dy, p_dy_values, &dy_flags, TRUE);
@@ -5327,6 +5350,9 @@ didset_options()
 #ifdef FEAT_CMDWIN
     /* set cedit_key */
     (void)check_cedit();
+#endif
+#ifdef FEAT_LINEBREAK
+    briopt_check();
 #endif
 }
 
@@ -5781,6 +5807,14 @@ did_set_string_option(opt_idx, varp, new_value_alloced, oldval, errbuf,
 		     *p_pm == '.' ? p_pm + 1 : p_pm) == 0)
 	    errmsg = (char_u *)N_("E589: 'backupext' and 'patchmode' are equal");
     }
+#ifdef FEAT_LINEBREAK
+    /* 'breakindentopt' */
+    else if (varp == &curwin->w_p_briopt)
+    {
+	if (briopt_check() == FAIL)
+	    errmsg = e_invarg;
+    }
+#endif
 
     /*
      * 'isident', 'iskeyword', 'isprint or 'isfname' option: refill chartab[]
@@ -6996,12 +7030,12 @@ did_set_string_option(opt_idx, varp, new_value_alloced, oldval, errbuf,
     /* 'fuoptions' */
     else if (varp == &p_fuoptions)
     {
-        if (check_fuoptions(p_fuoptions, &fuoptions_flags, 
+        if (check_fuoptions(p_fuoptions, &fuoptions_flags,
                     &fuoptions_bgcolor) != OK)
 	    errmsg = e_invarg;
     }
 #endif
-    
+
 #ifdef FEAT_VIRTUALEDIT
     /* 'virtualedit' */
     else if (varp == &p_ve)
@@ -7905,12 +7939,12 @@ set_bool_option(opt_idx, varp, value, opt_flags)
 	if (p_fullscreen && !old_value)
 	{
             guicolor_T fg, bg;
-            if (fuoptions_flags & FUOPT_BGCOLOR_HLGROUP) 
+            if (fuoptions_flags & FUOPT_BGCOLOR_HLGROUP)
             {
-                /* Find out background color from colorscheme 
+                /* Find out background color from colorscheme
                  * via highlight group id */
                 syn_id2colors(fuoptions_bgcolor, &fg, &bg);
-            } 
+            }
             else
             {
                 /* set explicit background color */
@@ -8733,6 +8767,11 @@ set_num_option(opt_idx, varp, value, errbuf, errbuflen, opt_flags)
 	errmsg = e_positive;
 	p_hi = 0;
     }
+    else if (p_hi > 10000)
+    {
+	errmsg = e_invarg;
+	p_hi = 10000;
+    }
     if (p_re < 0 || p_re > 2)
     {
 	errmsg = e_invarg;
@@ -9093,12 +9132,12 @@ get_option_value_strict(name, numval, stringval, opt_type, from)
 }
 
 /*
- * Iterate over options. First argument is a pointer to a pointer to a structure 
+ * Iterate over options. First argument is a pointer to a pointer to a structure
  * inside options[] array, second is option type like in the above function.
  *
- * If first argument points to NULL it is assumed that iteration just started 
+ * If first argument points to NULL it is assumed that iteration just started
  * and caller needs the very first value.
- * If first argument points to the end marker function returns NULL and sets 
+ * If first argument points to the end marker function returns NULL and sets
  * first argument to NULL.
  *
  * Returns full option name for current option on each call.
@@ -10151,6 +10190,8 @@ get_varp(p)
 	case PV_WRAP:	return (char_u *)&(curwin->w_p_wrap);
 #ifdef FEAT_LINEBREAK
 	case PV_LBR:	return (char_u *)&(curwin->w_p_lbr);
+	case PV_BRI:	return (char_u *)&(curwin->w_p_bri);
+	case PV_BRIOPT: return (char_u *)&(curwin->w_p_briopt);
 #endif
 #ifdef FEAT_SCROLLBIND
 	case PV_SCBIND: return (char_u *)&(curwin->w_p_scb);
@@ -10343,6 +10384,8 @@ copy_winopt(from, to)
 #endif
 #ifdef FEAT_LINEBREAK
     to->wo_lbr = from->wo_lbr;
+    to->wo_bri = from->wo_bri;
+    to->wo_briopt = vim_strsave(from->wo_briopt);
 #endif
 #ifdef FEAT_SCROLLBIND
     to->wo_scb = from->wo_scb;
@@ -10404,7 +10447,7 @@ check_win_options(win)
 /*
  * Check for NULL pointers in a winopt_T and replace them with empty_option.
  */
-    void
+    static void
 check_winopt(wop)
     winopt_T	*wop UNUSED;
 {
@@ -10430,6 +10473,9 @@ check_winopt(wop)
 #ifdef FEAT_CONCEAL
     check_string_option(&wop->wo_cocu);
 #endif
+#ifdef FEAT_LINEBREAK
+    check_string_option(&wop->wo_briopt);
+#endif
 }
 
 /*
@@ -10448,6 +10494,9 @@ clear_winopt(wop)
     clear_string_option(&wop->wo_fdt);
 # endif
     clear_string_option(&wop->wo_fmr);
+#endif
+#ifdef FEAT_LINEBREAK
+    clear_string_option(&wop->wo_briopt);
 #endif
 #ifdef FEAT_RIGHTLEFT
     clear_string_option(&wop->wo_rlc);
@@ -12069,7 +12118,7 @@ find_mps_values(initc, findc, backwards, switchit)
 
 #ifdef FEAT_FULLSCREEN
 /*
- * Read the 'fuoptions' option, set fuoptions_flags and 
+ * Read the 'fuoptions' option, set fuoptions_flags and
  * fuoptions_bgcolor.
  */
     static int
@@ -12082,7 +12131,7 @@ check_fuoptions(p_fuoptions, flags, bgcolor)
     int         new_fuoptions_bgcolor;
     char_u      *p;
     char_u      hg_term;        /* character terminating
-                                   highlight group string in 
+                                   highlight group string in
                                    'background' option' */
     int		i,j,k;
 
@@ -12095,7 +12144,7 @@ check_fuoptions(p_fuoptions, flags, bgcolor)
 	    ;
 	if (p[i] != NUL && p[i] != ',' && p[i] != ':')
 	    return FAIL;
-        if (i == 10 && STRNCMP(p, "background", 10) == 0) 
+        if (i == 10 && STRNCMP(p, "background", 10) == 0)
         {
             if (p[i] != ':') return FAIL;
             i++;
@@ -12109,15 +12158,15 @@ check_fuoptions(p_fuoptions, flags, bgcolor)
                 if (j < i+8)
                     return FAIL;    /* less than 8 digits */
                 if (p[j] != NUL && p[j] != ',')
-                    return FAIL; 
+                    return FAIL;
                 new_fuoptions_bgcolor = 0;
-                for (k = 0; k < 8; k++) 
+                for (k = 0; k < 8; k++)
                     new_fuoptions_bgcolor = new_fuoptions_bgcolor * 16 +
                         hex2nr(p[i+k]);
                 i = j;
                 /* mark bgcolor as an explicit argb color */
                 new_fuoptions_flags &= ~FUOPT_BGCOLOR_HLGROUP;
-            } 
+            }
             else
             {
                 /* highlight group name */
@@ -12129,7 +12178,7 @@ check_fuoptions(p_fuoptions, flags, bgcolor)
                 p[j] = NUL;     /* temporarily terminate string */
                 new_fuoptions_bgcolor = syn_name2id((char_u*)(p+i));
                 p[j] = hg_term; /* restore string */
-                if (! new_fuoptions_bgcolor) 
+                if (! new_fuoptions_bgcolor)
                     return FAIL;
                 i = j;
                 /* mark bgcolor as highlight group id */
@@ -12154,6 +12203,52 @@ check_fuoptions(p_fuoptions, flags, bgcolor)
 
     /* Let the GUI know, in case the background color has changed. */
     gui_mch_fuopt_update();
+
+    return OK;
+}
+#endif
+
+#if defined(FEAT_LINEBREAK) || defined(PROTO)
+/*
+ * This is called when 'breakindentopt' is changed and when a window is
+ * initialized.
+ */
+    int
+briopt_check()
+{
+    char_u	*p;
+    int		bri_shift = 0;
+    long	bri_min = 20;
+    int		bri_sbr = FALSE;
+
+    p = curwin->w_p_briopt;
+    while (*p != NUL)
+    {
+	if (STRNCMP(p, "shift:", 6) == 0
+		 && ((p[6] == '-' && VIM_ISDIGIT(p[7])) || VIM_ISDIGIT(p[6])))
+	{
+	    p += 6;
+	    bri_shift = getdigits(&p);
+	}
+	else if (STRNCMP(p, "min:", 4) == 0 && VIM_ISDIGIT(p[4]))
+	{
+	    p += 4;
+	    bri_min = getdigits(&p);
+	}
+	else if (STRNCMP(p, "sbr", 3) == 0)
+	{
+	    p += 3;
+	    bri_sbr = TRUE;
+	}
+	if (*p != ',' && *p != NUL)
+	    return FAIL;
+	if (*p == ',')
+	    ++p;
+    }
+
+    curwin->w_p_brishift = bri_shift;
+    curwin->w_p_brimin   = bri_min;
+    curwin->w_p_brisbr   = bri_sbr;
 
     return OK;
 }
