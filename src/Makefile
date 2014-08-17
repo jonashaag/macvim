@@ -418,7 +418,7 @@ CClink = $(CC)
 # NOTE: This may cause threading to be enabled, which has side effects (such
 # as using different libraries and debugging becomes more difficult).
 # NOTE: Using this together with Perl may cause a crash in initialization.
-# For Python3 support make a symbolic link in /usr/local/bin: 
+# For Python3 support make a symbolic link in /usr/local/bin:
 #	ln -s python3 python3.1
 # If both python2.x and python3.x are enabled then the linking will be via
 # dlopen(), dlsym(), dlclose(), i.e. pythonX.Y.so must be available
@@ -2493,13 +2493,8 @@ lintinstall:
 
 auto/if_perl.c: if_perl.xs
 	$(PERL) -e 'unless ( $$] >= 5.005 ) { for (qw(na defgv errgv)) { print "#define PL_$$_ $$_\n" }}' > $@
-	-@if test -e $(PERLSITELIB)/ExtUtils/xsubpp; then \
-		$(PERL) $(PERLSITELIB)/ExtUtils/xsubpp -prototypes -typemap \
-			$(PERLLIB)/ExtUtils/typemap if_perl.xs >> $@; \
-	else \
-		$(PERL) $(PERLLIB)/ExtUtils/xsubpp -prototypes -typemap \
-			$(PERLLIB)/ExtUtils/typemap if_perl.xs >> $@; \
-	fi
+	$(PERL) $(PERL_XSUBPP) -prototypes -typemap \
+	    $(PERLLIB)/ExtUtils/typemap if_perl.xs >> $@
 
 auto/osdef.h: auto/config.h osdef.sh osdef1.h.in osdef2.h.in
 	CC="$(CC) $(OSDEF_CFLAGS)" srcdir=$(srcdir) sh $(srcdir)/osdef.sh
@@ -2653,7 +2648,7 @@ objects/if_lua.o: if_lua.c
 
 objects/if_mzsch.o: if_mzsch.c $(MZSCHEME_EXTRA)
 	$(CCC) -o $@ $(MZSCHEME_CFLAGS_EXTRA) if_mzsch.c
- 
+
 mzscheme_base.c:
 	$(MZSCHEME_MZC) --c-mods mzscheme_base.c ++lib scheme/base
 
