@@ -479,14 +479,18 @@ newwindow:
     case ']':
     case Ctrl_RSB:
 		CHECK_CMDWIN
-		reset_VIsual_and_resel();	/* stop Visual mode */
+		/* keep Visual mode, can select words to use as a tag */
 		if (Prenum)
 		    postponed_split = Prenum;
 		else
 		    postponed_split = -1;
+#ifdef FEAT_QUICKFIX
+		if (nchar != '}')
+		    g_do_tagpreview = 0;
+#endif
 
-		/* Execute the command right here, required when
-		 * "wincmd ]" was used in a function. */
+		/* Execute the command right here, required when "wincmd ]"
+		 * was used in a function. */
 		do_nv_ident(Ctrl_RSB, NUL);
 		break;
 
@@ -590,7 +594,7 @@ wingotofile:
 #endif
 		    case ']':
 		    case Ctrl_RSB:
-			reset_VIsual_and_resel();	/* stop Visual mode */
+			/* keep Visual mode, can select words to use as a tag */
 			if (Prenum)
 			    postponed_split = Prenum;
 			else
@@ -1183,6 +1187,11 @@ win_split_ins(size, flags, new_wp, dir)
 	    p_wh = size;
     }
 
+#ifdef FEAT_JUMPLIST
+    /* Keep same changelist position in new window. */
+    wp->w_changelistidx = oldwin->w_changelistidx;
+#endif
+
     /*
      * make the new window the current window
      */
@@ -1271,7 +1280,7 @@ win_init(newp, oldp, flags)
 }
 
 /*
- * Initialize window "newp" from window"old".
+ * Initialize window "newp" from window "old".
  * Only the essential things are copied.
  */
     static void
@@ -6667,8 +6676,8 @@ restore_snapshot_rec(sn, fr)
 	|| defined(PROTO)
 /*
  * Set "win" to be the curwin and "tp" to be the current tab page.
- * restore_win() MUST be called to undo.
- * No autocommands will be executed.
+ * restore_win() MUST be called to undo, also when FAIL is returned.
+ * No autocommands will be executed until restore_win() is called.
  * When "no_display" is TRUE the display won't be affected, no redraw is
  * triggered, another tabpage access is limited.
  * Returns FAIL if switching to "win" failed.
@@ -6701,12 +6710,7 @@ switch_win(save_curwin, save_curtab, win, tp, no_display)
 	    goto_tabpage_tp(tp, FALSE, FALSE);
     }
     if (!win_valid(win))
-    {
-# ifdef FEAT_AUTOCMD
-	unblock_autocmds();
-# endif
 	return FAIL;
-    }
     curwin = win;
     curbuf = curwin->w_buffer;
 # endif

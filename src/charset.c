@@ -1184,6 +1184,12 @@ win_lbr_chartabsize(wp, line, s, col, headp)
 	{
 	    col -= W_WIDTH(wp);
 	    numberextra = W_WIDTH(wp) - (numberextra - win_col_off2(wp));
+	    if (*p_sbr != NUL)
+	    {
+		colnr_T sbrlen = (colnr_T)MB_CHARLEN(p_sbr);
+		if (col >= sbrlen)
+		    col -= sbrlen;
+	    }
 	    if (numberextra > 0)
 		col = col % numberextra;
 	}
@@ -1195,10 +1201,7 @@ win_lbr_chartabsize(wp, line, s, col, headp)
 	    if (wp->w_p_bri)
 		added += get_breakindent_win(wp, line);
 
-	    if (tab_corr)
-		size += (added / wp->w_buffer->b_p_ts) * wp->w_buffer->b_p_ts;
-	    else
-		size += added;
+	    size += added;
 	    if (col != 0)
 		added = 0;
 	}
