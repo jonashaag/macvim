@@ -9,4 +9,5 @@ deploy:
   file: MacVim.tar.bz2
   on:
     repo: jonashaag/macvim
-    branch: travis
+    all_branches: travis
+    tags: true
