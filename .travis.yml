@@ -6,7 +6,7 @@ deploy:
   provider: releases
   api_key:
     secure: O8/rXDw7V6Ms1XcOm1VBifng0CaipOICogWjl7iD0LCeVUHSCUgwUEX2ep2y5+34sClwwYSaP5BVxqn6koPlWsAm242g6faWIOmL4amduMTupD6JVFFleeMDoKuKkHBFNl8pQiYRbHurgvku3VH12yz1QUZkYHoK9W0ZXrBT99s=
-  file: MacVim.tar.xz
+  file: MacVim.tar.bz2
   on:
     repo: jonashaag/macvim
     branch: travis

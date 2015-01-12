@@ -12,4 +12,4 @@
 make
 
 tar -C src/MacVim/build/Release/ -c MacVim.app > MacVim.tar
-xz -9 MacVim.tar
+bzip2 -9 MacVim.tar
